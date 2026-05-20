@@ -65,6 +65,10 @@ _claudenv_apply() {
   export CLAUDE_CONFIG_DIR="$CLAUDENV_ACCOUNTS_DIR/$1"
 }
 
+_claudenv_accounts_empty() {
+  [ -z "$(ls -A "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)" ]
+}
+
 # --- main command -----------------------------------------------------------
 
 claudenv() {
@@ -83,9 +87,18 @@ claudenv() {
         echo "Account '$name' already exists" >&2
         return 1
       fi
+      local first=0
+      _claudenv_accounts_empty && first=1
       mkdir -p "$CLAUDENV_ACCOUNTS_DIR/$name"
       echo "Added account '$name' at $CLAUDENV_ACCOUNTS_DIR/$name"
-      echo "Next: claudenv use $name && claude   (then /login)"
+      if [ "$first" = 1 ]; then
+        _claudenv_apply "$name"
+        echo "$name" > "$CLAUDENV_CURRENT_FILE"
+        echo "→ $name  (auto-activated as global default)"
+        echo "Next: claude   (then /login)"
+      else
+        echo "Next: claudenv use $name && claude   (then /login)"
+      fi
       ;;
 
     import)
@@ -104,6 +117,8 @@ claudenv() {
         echo "Source directory '$src' does not exist" >&2
         return 1
       fi
+      local first=0
+      _claudenv_accounts_empty && first=1
       mkdir -p "$CLAUDENV_ACCOUNTS_DIR"
       if ! cp -R "$src" "$CLAUDENV_ACCOUNTS_DIR/$name"; then
         echo "Failed to copy $src" >&2
@@ -111,7 +126,13 @@ claudenv() {
         return 1
       fi
       echo "Imported $src → '$name'"
-      echo "Next: claudenv use $name"
+      if [ "$first" = 1 ]; then
+        _claudenv_apply "$name"
+        echo "$name" > "$CLAUDENV_CURRENT_FILE"
+        echo "→ $name  (auto-activated as global default)"
+      else
+        echo "Next: claudenv use $name"
+      fi
       ;;
 
     use)

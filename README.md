@@ -3,11 +3,13 @@
 An **nvm-style** account manager for [Claude Code](https://docs.claude.com/en/docs/claude-code). Set a default account, override per-project with `.claudenvrc`, optionally auto-switch on `cd`. Zero dependencies.
 
 ```bash
-claudenv import default       # save current ~/.claude as 'default'
-claudenv add work             # create new account slot
-claudenv use work             # switch + set as global default
+claudenv import default       # save current ~/.claude as 'default' (auto-activated — first profile)
+claudenv add work             # create new empty slot
+claudenv use work             # switch this shell + set as global default
 claude                        # /login here, isolated from 'default'
 ```
+
+> When `accounts/` is empty, the first `import` or `add` auto-activates the new profile so you don't have to follow with `claudenv use`. Subsequent ones don't change the active profile.
 
 ## Is this for you?
 
