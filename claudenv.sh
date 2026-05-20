@@ -107,7 +107,7 @@ claudenv() {
       mkdir -p "$CLAUDENV_ACCOUNTS_DIR"
       if ! cp -R "$src" "$CLAUDENV_ACCOUNTS_DIR/$name"; then
         echo "Failed to copy $src" >&2
-        rm -rf "$CLAUDENV_ACCOUNTS_DIR/$name"
+        rm -rf "${CLAUDENV_ACCOUNTS_DIR:?}/$name"
         return 1
       fi
       echo "Imported $src → '$name'"
@@ -231,7 +231,7 @@ claudenv() {
       printf "Delete account '%s' and all its data? [y/N] " "$name"
       read -r ans
       if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
-        rm -rf "$CLAUDENV_ACCOUNTS_DIR/$name"
+        rm -rf "${CLAUDENV_ACCOUNTS_DIR:?}/$name"
         if [ -f "$CLAUDENV_CURRENT_FILE" ] && [ "$(cat "$CLAUDENV_CURRENT_FILE")" = "$name" ]; then
           rm -f "$CLAUDENV_CURRENT_FILE"
           unset CLAUDE_CONFIG_DIR
@@ -319,6 +319,11 @@ claudenv_enable_auto_switch() {
 
 # --- shell completion -------------------------------------------------------
 
+# ShellCheck doesn't understand zsh-specific syntax used in this function:
+#   - SC2034: `subcommands` is consumed by `_describe`
+#   - SC2154: `$words` and `$CURRENT` are zsh completion built-ins
+#   - SC2296: `${(@f)...}` is the zsh "split on newlines" parameter flag
+# shellcheck disable=SC2034,SC2154,SC2296
 _claudenv_complete_zsh() {
   local -a subcommands accounts
   subcommands=(
@@ -348,6 +353,9 @@ _claudenv_complete_zsh() {
   fi
 }
 
+# SC2207: `compgen` output into COMPREPLY via word-splitting is the
+# canonical bash completion idiom; mapfile alternative requires bash 4+.
+# shellcheck disable=SC2207
 _claudenv_complete_bash() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   COMPREPLY=()
