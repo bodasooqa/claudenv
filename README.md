@@ -87,6 +87,20 @@ For unattended installs (CI, scripted), set `CLAUDENV_AUTO_SWITCH=1` (or `0`) be
 CLAUDENV_AUTO_SWITCH=1 curl -fsSL https://raw.githubusercontent.com/bodasooqa/claudenv/main/install.sh | bash
 ```
 
+## GUI-launched IDEs (macOS)
+
+claudenv works by setting `CLAUDE_CONFIG_DIR` in your shell. When you launch an IDE (VS Code, Cursor) from the Dock, Spotlight, or Finder, macOS spawns it under `launchd` — which does not read `~/.zshrc`. The IDE's process environment is therefore missing `CLAUDE_CONFIG_DIR`, and the `claude` binary the extension spawns inherits that empty env. The result: the extension uses the default `~/.claude` config, not the claudenv profile you have active in your terminals.
+
+**Workaround:** launch the IDE from a terminal:
+
+```bash
+cursor .       # or: code .
+```
+
+The terminal session has already sourced your shell rc, so the env propagates into the IDE and into anything it spawns.
+
+This is the same constraint that affects `nvm`, `pyenv`, and other shell-init tools. A proper fix would be a `claude` wrapper script on launchd's PATH so GUI launches pick up the right `CLAUDE_CONFIG_DIR` automatically — [open an issue](https://github.com/bodasooqa/claudenv/issues) if you'd like that built in.
+
 ## Commands
 
 | Command | What it does |
