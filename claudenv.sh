@@ -138,7 +138,9 @@ claudenv() {
     use)
       local name="$1"
       if [ -z "$name" ]; then
-        # No arg — resolve via .claudenvrc, env-only (don't touch global default)
+        # No arg — resolve via .claudenvrc, env-only (don't touch global default).
+        # Lazy-create the profile if the .claudenvrc references one that
+        # doesn't exist yet (e.g. a teammate added .claudenvrc in the repo).
         local rc_file
         if ! rc_file=$(_claudenv_find_rc); then
           echo "No .claudenvrc found in $PWD or any parent. Usage: claudenv use <name>" >&2
@@ -150,8 +152,11 @@ claudenv() {
           return 1
         fi
         if [ ! -d "$CLAUDENV_ACCOUNTS_DIR/$name" ]; then
-          echo "Account '$name' from $rc_file not found. Create it with: claudenv add $name" >&2
-          return 1
+          if ! mkdir -p "$CLAUDENV_ACCOUNTS_DIR/$name"; then
+            echo "Failed to create '$name' at $CLAUDENV_ACCOUNTS_DIR/$name" >&2
+            return 1
+          fi
+          echo "claudenv: created '$name' (referenced by $rc_file but missing in accounts/)"
         fi
         _claudenv_apply "$name"
         echo "→ $name  (from $rc_file)"
@@ -299,7 +304,13 @@ _claudenv_auto_switch_hook() {
     desired=$(_claudenv_read_rc "$rc_file")
     _claudenv_validate_name "$desired" 2>/dev/null || return
     desired_path="$CLAUDENV_ACCOUNTS_DIR/$desired"
-    if [ -d "$desired_path" ] && [ "$CLAUDE_CONFIG_DIR" != "$desired_path" ]; then
+    if [ ! -d "$desired_path" ]; then
+      # Lazy-create the profile referenced by .claudenvrc. Silent on
+      # failure so cd doesn't spam errors if e.g. disk is full.
+      mkdir -p "$desired_path" 2>/dev/null || return
+      echo "claudenv: created '$desired' (referenced by $rc_file but missing in accounts/)"
+    fi
+    if [ "$CLAUDE_CONFIG_DIR" != "$desired_path" ]; then
       export CLAUDE_CONFIG_DIR="$desired_path"
       echo "claudenv: → $desired  (from $rc_file)"
     fi

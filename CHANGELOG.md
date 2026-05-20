@@ -17,3 +17,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shell completion for zsh and bash.
 - Installer script (`install.sh`) with shell detection and idempotent rc-line injection.
 - `add` and `import` auto-activate the new profile when it is the first one in `~/.claudenv/accounts/`, so the bootstrap flow is a single command. Subsequent `add`/`import` calls leave the active profile unchanged.
+- `claudenv use` (no args) and the auto-switch `cd` hook now lazy-create a missing profile when a `.claudenvrc` references one that doesn't exist yet (typical when cloning a teammate's repo). The creation is announced before the switch; commands that take an explicit name (`claudenv use <name>`, `claudenv local <name>`) still error so typos can't silently mint stray profiles.
