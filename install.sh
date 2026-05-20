@@ -14,11 +14,11 @@ CLAUDENV_SOURCE="https://raw.githubusercontent.com/$CLAUDENV_REPO/$CLAUDENV_VERS
 # --- output helpers ---------------------------------------------------------
 
 if [ -t 1 ]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  YELLOW='\033[1;33m'
-  BOLD='\033[1m'
-  NC='\033[0m'
+  RED=$'\033[0;31m'
+  GREEN=$'\033[0;32m'
+  YELLOW=$'\033[1;33m'
+  BOLD=$'\033[1m'
+  NC=$'\033[0m'
 else
   RED=''; GREEN=''; YELLOW=''; BOLD=''; NC=''
 fi
