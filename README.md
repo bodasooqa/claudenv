@@ -1,5 +1,10 @@
 # claudenv
 
+[![ShellCheck](https://img.shields.io/github/actions/workflow/status/bodasooqa/claudenv/shellcheck.yml?branch=main&label=shellcheck&logo=githubactions&logoColor=white)](https://github.com/bodasooqa/claudenv/actions/workflows/shellcheck.yml)
+[![License: MIT](https://img.shields.io/github/license/bodasooqa/claudenv)](LICENSE)
+![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+
 An **nvm-style** account manager for [Claude Code](https://docs.claude.com/en/docs/claude-code). Set a default account, override per-project with `.claudenvrc`, optionally auto-switch on `cd`. Zero dependencies.
 
 ```bash
