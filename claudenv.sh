@@ -193,10 +193,13 @@ claudenv() {
         echo "No accounts yet. Add one with: claudenv add <name>"
         return 0
       fi
+      # Declare loop-locals once, then only assign inside the loop.
+      # zsh's `local name` (without `=`) prints `name=value` from the
+      # second iteration onward when TYPESET_SILENT is unset (default).
+      local name marker
       for dir in "$CLAUDENV_ACCOUNTS_DIR"/*/; do
-        local name
         name=$(basename "$dir")
-        local marker="  "
+        marker="  "
         [ "$name" = "$current" ] && marker="d "
         [ "$name" = "$active" ]  && marker="* "
         echo "$marker$name"
