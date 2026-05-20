@@ -68,13 +68,19 @@ Commit `.claudenvrc` so the whole team gets the same account on this project.
 
 ## Auto-switch on `cd`
 
-Opt-in. Add this to your `~/.zshrc` or `~/.bashrc`:
+The installer asks whether to enable it. If you skipped, opt in later by appending to your `~/.zshrc` or `~/.bashrc`:
 
 ```bash
 claudenv_enable_auto_switch
 ```
 
 Now `cd`-ing into a folder with `.claudenvrc` switches the account; leaving restores your global default.
+
+For unattended installs (CI, scripted), set `CLAUDENV_AUTO_SWITCH=1` (or `0`) before invoking the installer to skip the prompt:
+
+```bash
+CLAUDENV_AUTO_SWITCH=1 curl -fsSL https://raw.githubusercontent.com/bodasooqa/claudenv/main/install.sh | bash
+```
 
 ## Commands
 

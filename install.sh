@@ -94,6 +94,38 @@ else
   info "Added source line to $RC_FILE"
 fi
 
+# --- offer auto-switch on cd -----------------------------------------------
+
+AUTO_SWITCH_LINE="claudenv_enable_auto_switch  # claudenv"
+AUTO_SWITCH_ENABLED=0
+
+if [ -n "$RC_FILE" ]; then
+  if grep -Fq "claudenv_enable_auto_switch" "$RC_FILE" 2>/dev/null; then
+    AUTO_SWITCH_ENABLED=1
+    info "Auto-switch already enabled in $RC_FILE"
+  else
+    # Decision order:
+    #   1. CLAUDENV_AUTO_SWITCH env var (for CI / scripted installs)
+    #   2. interactive prompt read from /dev/tty (so curl|bash works)
+    #   3. default: no
+    # We probe /dev/tty by trying to WRITE to it. `[ -r /dev/tty ]` is
+    # unreliable on macOS — it can pass even when /dev/tty is detached
+    # (e.g. CI runners), only to fail later with "Device not configured".
+    auto_ans="${CLAUDENV_AUTO_SWITCH:-}"
+    if [ -z "$auto_ans" ] && (printf "" > /dev/tty) 2>/dev/null; then
+      printf "Enable auto-switch on cd? [y/N] " > /dev/tty
+      read -r auto_ans < /dev/tty || auto_ans=n
+    fi
+    case "$auto_ans" in
+      y|Y|yes|YES|1|true|TRUE)
+        printf "\n%s\n" "$AUTO_SWITCH_LINE" >> "$RC_FILE"
+        info "Added 'claudenv_enable_auto_switch' to $RC_FILE"
+        AUTO_SWITCH_ENABLED=1
+        ;;
+    esac
+  fi
+fi
+
 # --- check for claude CLI ---------------------------------------------------
 
 if ! command -v claude >/dev/null 2>&1; then
@@ -115,7 +147,12 @@ Or open a new terminal. Then try:
   claudenv add work                # create a new account slot
   claudenv use work                # switch + set as global default
 
-Optional (auto-switch on cd into a folder with .claudenvrc):
+EOF
+
+if [ "$AUTO_SWITCH_ENABLED" = "0" ] && [ -n "$RC_FILE" ]; then
+  cat <<EOF
+To enable auto-switch later:
   echo 'claudenv_enable_auto_switch' >> $RC_FILE
 
 EOF
+fi
