@@ -1,1 +1,69 @@
 /* claudenv landing — styles */
+
+:root {
+  --bg: #0a0a0a;
+  --bg-elev: #161616;
+  --fg: #e5e5e5;
+  --fg-dim: #8a8a8a;
+  --accent: #ff7a59;
+  --accent-dim: #a04733;
+  --success: #5fff7f;
+  --border: #262626;
+
+  --font: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --pad-x: clamp(1rem, 4vw, 2rem);
+  --section-gap: clamp(3rem, 8vw, 5rem);
+  --content-max: 720px;
+  --demo-max: 960px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+main {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--section-gap) var(--pad-x);
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+h1, h2, h3 {
+  line-height: 1.2;
+  margin: 0;
+  font-weight: 700;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover { color: var(--accent-dim); }
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code, pre {
+  font-family: var(--font);
+}
