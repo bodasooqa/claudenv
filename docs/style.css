@@ -301,3 +301,24 @@ code, pre {
     gap: 1.25rem;
   }
 }
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+.footer .dim { color: var(--fg-dim); }
+.footer-credit {
+  margin: 0;
+  color: var(--fg-dim);
+}
