@@ -77,3 +77,122 @@ code, pre {
   white-space: nowrap;
   border: 0;
 }
+
+/* Hero */
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+
+.wordmark {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.wordmark::before {
+  content: ">_ ";
+  color: var(--accent);
+}
+
+.tagline {
+  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  margin: 0;
+}
+.subtagline {
+  color: var(--fg-dim);
+  margin: 0;
+  max-width: 60ch;
+}
+
+.install {
+  position: relative;
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+.install pre {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  flex: 1;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  white-space: pre;
+}
+.install pre code::before {
+  content: "$ ";
+  color: var(--fg-dim);
+}
+.copy {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--fg-dim);
+  padding: 0 1rem;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  transition: color 150ms ease, background 150ms ease;
+}
+.copy:hover {
+  color: var(--accent);
+  background: rgba(255, 122, 89, 0.08);
+}
+.copy[data-copied="true"] {
+  color: var(--success);
+}
+
+.badges {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.badges img { display: block; height: 20px; }
+
+.ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+.btn {
+  display: inline-block;
+  padding: 0.75rem 1.25rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-align: center;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+.btn-primary:hover {
+  background: var(--accent-dim);
+  color: var(--fg);
+}
+.btn-secondary {
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (min-width: 640px) {
+  .ctas {
+    flex-direction: row;
+    width: auto;
+  }
+}
