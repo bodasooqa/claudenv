@@ -12,8 +12,74 @@
 </head>
 <body>
   <main>
-    <h1>claudenv</h1>
-    <p>placeholder</p>
+    <section class="hero">
+      <h1 class="wordmark">claudenv</h1>
+      <p class="tagline">nvm-style account manager for <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a>.</p>
+      <p class="subtagline">Set a default account, override per-project, optionally auto-switch on <code>cd</code>. Zero dependencies.</p>
+
+      <div class="install" data-install>
+        <pre><code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/bodasooqa/claudenv/main/install.sh | bash</code></pre>
+        <button type="button" class="copy" data-copy="#install-cmd" aria-label="Copy install command">Copy</button>
+      </div>
+
+      <ul class="badges" aria-label="Project badges">
+        <li><a href="https://github.com/bodasooqa/claudenv/actions/workflows/shellcheck.yml"><img src="https://img.shields.io/github/actions/workflow/status/bodasooqa/claudenv/shellcheck.yml?branch=main&label=shellcheck&logo=githubactions&logoColor=white" alt="ShellCheck CI status"></a></li>
+        <li><a href="https://github.com/bodasooqa/claudenv/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bodasooqa/claudenv" alt="MIT License"></a></li>
+        <li><img src="https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white" alt="macOS supported"></li>
+        <li><img src="https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black" alt="Linux supported"></li>
+      </ul>
+
+      <div class="ctas">
+        <a class="btn btn-primary" href="https://github.com/bodasooqa/claudenv">View on GitHub</a>
+        <a class="btn btn-secondary" href="#demo">See it in action</a>
+      </div>
+    </section>
+
+    <section class="demo-section" id="demo" aria-label="Animated terminal demo">
+      <div class="terminal" aria-hidden="true">
+        <div class="terminal-bar">
+          <span class="dot dot-r"></span>
+          <span class="dot dot-y"></span>
+          <span class="dot dot-g"></span>
+        </div>
+        <pre class="terminal-body" data-terminal></pre>
+      </div>
+    </section>
+
+    <section class="features">
+      <h2 class="sr-only">Why claudenv</h2>
+      <ul class="cards">
+        <li class="card">
+          <span class="card-num">[01]</span>
+          <h3>Zero dependencies</h3>
+          <p>Pure shell. No Node, Ruby, Python. Just <code>bash</code>/<code>zsh</code> and <code>claude</code>.</p>
+        </li>
+        <li class="card">
+          <span class="card-num">[02]</span>
+          <h3>Per-project pinning</h3>
+          <p><code>.claudenvrc</code> walks up from <code>$PWD</code> like <code>.nvmrc</code>. Commit it for the team.</p>
+        </li>
+        <li class="card">
+          <span class="card-num">[03]</span>
+          <h3>Auto-switch on <code>cd</code></h3>
+          <p>Opt-in shell hook switches profiles when you enter a project folder.</p>
+        </li>
+        <li class="card">
+          <span class="card-num">[04]</span>
+          <h3>No file patching</h3>
+          <p>Uses the official <code>CLAUDE_CONFIG_DIR</code> env var. Your <code>~/.claude</code> stays untouched.</p>
+        </li>
+      </ul>
+    </section>
+
+    <footer class="footer">
+      <div class="footer-row">
+        <a href="https://github.com/bodasooqa/claudenv">GitHub</a>
+        <a href="https://github.com/bodasooqa/claudenv/blob/main/LICENSE">MIT License</a>
+        <span class="dim">Not affiliated with Anthropic.</span>
+      </div>
+      <p class="footer-credit">Built by <a href="https://github.com/bodasooqa">@bodasooqa</a>.</p>
+    </footer>
   </main>
   <script src="app.js"></script>
 </body>
