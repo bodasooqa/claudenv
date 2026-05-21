@@ -322,3 +322,17 @@ code, pre {
   margin: 0;
   color: var(--fg-dim);
 }
+
+/* Intro animation */
+@media (prefers-reduced-motion: no-preference) {
+  .hero {
+    animation: fade-up 400ms ease-out both;
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+/* Scroll target offset (anchor link from CTA to demo) */
+.demo-section { scroll-margin-top: 1rem; }
