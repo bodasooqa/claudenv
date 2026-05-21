@@ -196,3 +196,61 @@ code, pre {
     width: auto;
   }
 }
+
+/* Terminal demo */
+.demo-section {
+  width: 100%;
+  max-width: var(--demo-max);
+  margin: 0 auto;
+}
+.terminal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.terminal-bar {
+  background: #0f0f0f;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-r { background: #ff5f57; }
+.dot-y { background: #febc2e; }
+.dot-g { background: #28c840; }
+
+.terminal-body {
+  margin: 0;
+  padding: 1.25rem 1.25rem 1.5rem;
+  font-size: clamp(0.8rem, 1.6vw, 0.95rem);
+  line-height: 1.55;
+  min-height: 16em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.terminal-body .prompt { color: var(--fg-dim); }
+.terminal-body .input { color: var(--fg); }
+.terminal-body .output { color: var(--fg-dim); }
+.terminal-body .ok { color: var(--success); }
+.terminal-body .caret {
+  display: inline-block;
+  width: 0.55ch;
+  background: var(--accent);
+  color: var(--accent);
+  margin-left: 1px;
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-body .caret { animation: none; }
+}
