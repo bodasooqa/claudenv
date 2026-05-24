@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# claudenv claude-wrapper — resolves the active claudenv profile, then execs claude.
+#
+# Use this in environments that can't source ~/.zshrc / ~/.bashrc but expose a
+# "wrapper executable" hook — e.g. VS Code / Cursor Claude Code extension setting
+# "Claude Process Wrapper" (claude-code.processWrapper). Point that setting at:
+#
+#   ~/.claudenv/bin/claude-wrapper
+#
+# This script resolves CLAUDE_CONFIG_DIR the same way claudenv.sh does
+# (nearest .claudenvrc walking up from $PWD, else ~/.claudenv/current), then
+# exec's the real claude with the chosen env applied.
+#
+# Env overrides:
+#   CLAUDENV_DIR         (default: ~/.claudenv)
+#   CLAUDENV_CLAUDE_BIN  (force a specific claude executable path)
+
+CLAUDENV_DIR="${CLAUDENV_DIR:-$HOME/.claudenv}"
+CLAUDENV_ACCOUNTS_DIR="$CLAUDENV_DIR/accounts"
+CLAUDENV_CURRENT_FILE="$CLAUDENV_DIR/current"
+
+# --- find the real claude binary --------------------------------------------
+# launchd's PATH is minimal (/usr/bin:/bin:/usr/sbin:/sbin), so `command -v`
+# may fail even when claude is installed via Homebrew or npm. Probe known
+# locations as a fallback.
+_find_claude() {
+  if [ -n "$CLAUDENV_CLAUDE_BIN" ] && [ -x "$CLAUDENV_CLAUDE_BIN" ]; then
+    printf '%s\n' "$CLAUDENV_CLAUDE_BIN"
+    return 0
+  fi
+  local hit
+  if hit=$(command -v claude 2>/dev/null) && [ -x "$hit" ]; then
+    printf '%s\n' "$hit"
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    /opt/homebrew/bin/claude \
+    /usr/local/bin/claude \
+    "$HOME/.local/bin/claude" \
+    "$HOME/.npm-global/bin/claude" \
+    "$HOME/.volta/bin/claude" \
+    "$HOME/.bun/bin/claude"
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  if command -v npm >/dev/null 2>&1; then
+    local prefix
+    prefix=$(npm config get prefix 2>/dev/null) || prefix=""
+    if [ -n "$prefix" ] && [ -x "$prefix/bin/claude" ]; then
+      printf '%s\n' "$prefix/bin/claude"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# --- profile resolution (mirrors claudenv.sh) -------------------------------
+
+_find_rc() {
+  local dir="$PWD"
+  while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+    if [ -f "$dir/.claudenvrc" ]; then
+      printf '%s\n' "$dir/.claudenvrc"
+      return 0
+    fi
+    dir=$(dirname "$dir")
+  done
+  return 1
+}
+
+_read_rc() {
+  sed -e 's/#.*//' -e 's/[[:space:]]//g' "$1" | head -n 1
+}
+
+_valid_name() {
+  case "$1" in
+    "") return 1 ;;
+    .|..|*/*|*\\*) return 1 ;;
+    *[![:alnum:]_.-]*) return 1 ;;
+  esac
+  return 0
+}
+
+_resolve_profile() {
+  local rc name
+  if rc=$(_find_rc); then
+    name=$(_read_rc "$rc")
+    if _valid_name "$name" && [ -d "$CLAUDENV_ACCOUNTS_DIR/$name" ]; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  fi
+  if [ -f "$CLAUDENV_CURRENT_FILE" ]; then
+    name=$(cat "$CLAUDENV_CURRENT_FILE" 2>/dev/null)
+    if _valid_name "$name" && [ -d "$CLAUDENV_ACCOUNTS_DIR/$name" ]; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# --- main -------------------------------------------------------------------
+
+claude_bin=$(_find_claude) || {
+  echo "claudenv-wrapper: 'claude' executable not found." >&2
+  echo "  Tried: \$CLAUDENV_CLAUDE_BIN, PATH, /opt/homebrew, /usr/local, ~/.local, ~/.npm-global, ~/.volta, ~/.bun, npm prefix." >&2
+  echo "  Install Claude Code or set CLAUDENV_CLAUDE_BIN to its full path." >&2
+  exit 127
+}
+
+if profile=$(_resolve_profile); then
+  export CLAUDE_CONFIG_DIR="$CLAUDENV_ACCOUNTS_DIR/$profile"
+fi
+
+exec "$claude_bin" "$@"

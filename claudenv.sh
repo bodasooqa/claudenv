@@ -22,6 +22,15 @@ CLAUDENV_DIR="${CLAUDENV_DIR:-$HOME/.claudenv}"
 CLAUDENV_ACCOUNTS_DIR="$CLAUDENV_DIR/accounts"
 CLAUDENV_CURRENT_FILE="$CLAUDENV_DIR/current"
 
+# Vibe Island integration (macOS): the app keeps the list of "Claude Code Forks"
+# as an array of paths under the customClaudeCodeConfigPaths key in its prefs.
+# Vibe Island injects its hooks into each registered path's settings.json on
+# launch. The domain and flag-file are overridable for testing/forks.
+CLAUDENV_VI_DOMAIN="${CLAUDENV_VI_DOMAIN:-app.vibeisland.macos}"
+CLAUDENV_VI_KEY="customClaudeCodeConfigPaths"
+CLAUDENV_VI_PLIST="$HOME/Library/Preferences/$CLAUDENV_VI_DOMAIN.plist"
+CLAUDENV_VI_FLAG="$CLAUDENV_DIR/vibe-island.enabled"
+
 mkdir -p "$CLAUDENV_ACCOUNTS_DIR"
 
 # --- internal helpers -------------------------------------------------------
@@ -69,6 +78,70 @@ _claudenv_accounts_empty() {
   [ -z "$(ls -A "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)" ]
 }
 
+# --- Vibe Island helpers (macOS only) ---------------------------------------
+
+_claudenv_vi_available() {
+  [ "$(uname -s)" = "Darwin" ] && [ -f "$CLAUDENV_VI_PLIST" ]
+}
+
+_claudenv_vi_path_for() {
+  # Vibe Island stores entries with literal `~` (not $HOME-expanded) in its
+  # plist; we match that so paths compare equal across registrations.
+  # shellcheck disable=SC2088
+  echo "~/.claudenv/accounts/$1"
+}
+
+_claudenv_vi_list_paths() {
+  # Extract array entries from `defaults read` output (one per line, unquoted).
+  # Returns 0 even if the key is missing (empty output).
+  defaults read "$CLAUDENV_VI_DOMAIN" "$CLAUDENV_VI_KEY" 2>/dev/null \
+    | sed -n 's/^[[:space:]]*"\(.*\)",*[[:space:]]*$/\1/p'
+}
+
+_claudenv_vi_contains() {
+  _claudenv_vi_list_paths | grep -Fxq -- "$1"
+}
+
+_claudenv_vi_add_path() {
+  local target="$1"
+  if _claudenv_vi_contains "$target"; then
+    return 0  # idempotent
+  fi
+  defaults write "$CLAUDENV_VI_DOMAIN" "$CLAUDENV_VI_KEY" -array-add "$target"
+}
+
+_claudenv_vi_remove_path() {
+  # defaults has no array-remove; we read, filter, then rewrite the array.
+  local target="$1"
+  local kept
+  kept=$(_claudenv_vi_list_paths | grep -Fvx -- "$target" || true)
+  if [ -z "$kept" ]; then
+    defaults delete "$CLAUDENV_VI_DOMAIN" "$CLAUDENV_VI_KEY" 2>/dev/null || true
+    return 0
+  fi
+  local -a args=()
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] && args+=("$line")
+  done <<< "$kept"
+  defaults write "$CLAUDENV_VI_DOMAIN" "$CLAUDENV_VI_KEY" -array "${args[@]}"
+}
+
+# Auto-register helper used by add/import when the flag file is present.
+# Silent no-op if Vibe Island isn't available or the flag isn't set.
+#
+# NB: `local path` would clobber zsh's tied PATH array — we use `vi_path`
+# throughout this file. Same applies to other helpers below.
+_claudenv_vi_autoregister() {
+  [ -f "$CLAUDENV_VI_FLAG" ] || return 0
+  _claudenv_vi_available || return 0
+  local vi_path
+  vi_path=$(_claudenv_vi_path_for "$1")
+  if _claudenv_vi_add_path "$vi_path"; then
+    echo "  ↳ registered with Vibe Island (relaunch VI to finish — fork will show 'Repair' until then)"
+  fi
+}
+
 # --- main command -----------------------------------------------------------
 
 claudenv() {
@@ -91,6 +164,7 @@ claudenv() {
       _claudenv_accounts_empty && first=1
       mkdir -p "$CLAUDENV_ACCOUNTS_DIR/$name"
       echo "Added account '$name' at $CLAUDENV_ACCOUNTS_DIR/$name"
+      _claudenv_vi_autoregister "$name"
       if [ "$first" = 1 ]; then
         _claudenv_apply "$name"
         echo "$name" > "$CLAUDENV_CURRENT_FILE"
@@ -126,6 +200,7 @@ claudenv() {
         return 1
       fi
       echo "Imported $src → '$name'"
+      _claudenv_vi_autoregister "$name"
       if [ "$first" = 1 ]; then
         _claudenv_apply "$name"
         echo "$name" > "$CLAUDENV_CURRENT_FILE"
@@ -265,8 +340,166 @@ claudenv() {
           rm -f "$CLAUDENV_CURRENT_FILE"
           unset CLAUDE_CONFIG_DIR
         fi
+        # Drop the path from Vibe Island's fork list so it doesn't dangle.
+        if _claudenv_vi_available; then
+          _claudenv_vi_remove_path "$(_claudenv_vi_path_for "$name")"
+        fi
         echo "Removed '$name'"
       fi
+      ;;
+
+    vibe-island)
+      if [ "$(uname -s)" != "Darwin" ]; then
+        echo "claudenv vibe-island: macOS only (Vibe Island is a macOS app)" >&2
+        return 1
+      fi
+      if [ ! -f "$CLAUDENV_VI_PLIST" ]; then
+        echo "claudenv vibe-island: Vibe Island prefs not found at $CLAUDENV_VI_PLIST" >&2
+        echo "  Install Vibe Island first, then re-run this command." >&2
+        return 1
+      fi
+
+      local sub="$1"
+      [ $# -gt 0 ] && shift
+
+      case "$sub" in
+        install)
+          local target="$1"
+          local -a names=()
+          if [ -z "$target" ] || [ "$target" = "--all" ]; then
+            if _claudenv_accounts_empty; then
+              echo "No profiles to register. Add one first: claudenv add <name>" >&2
+              return 1
+            fi
+            local dir
+            for dir in "$CLAUDENV_ACCOUNTS_DIR"/*/; do
+              names+=("$(basename "$dir")")
+            done
+          else
+            _claudenv_validate_name "$target" || return 1
+            if [ ! -d "$CLAUDENV_ACCOUNTS_DIR/$target" ]; then
+              echo "Account '$target' not found" >&2
+              return 1
+            fi
+            names=("$target")
+          fi
+
+          local added=0 already=0 n vi_path
+          for n in "${names[@]}"; do
+            vi_path=$(_claudenv_vi_path_for "$n")
+            if _claudenv_vi_contains "$vi_path"; then
+              echo "  = $n  (already registered)"
+              already=$((already + 1))
+            else
+              _claudenv_vi_add_path "$vi_path"
+              echo "  + $n  ($vi_path)"
+              added=$((added + 1))
+            fi
+          done
+
+          # Set the flag so future add/import auto-register.
+          touch "$CLAUDENV_VI_FLAG"
+
+          echo
+          echo "Registered $added new path(s); $already already present."
+          if [ "$added" -gt 0 ]; then
+            echo
+            echo "→ Relaunch Vibe Island to finish setup."
+            echo "  (New forks show a 'Repair' button until VI re-injects hooks on launch."
+            echo "   Closing and reopening VI is enough; no need to click Repair manually.)"
+          fi
+          ;;
+
+        uninstall)
+          local target="$1"
+          local -a paths_to_remove=()
+          if [ -z "$target" ] || [ "$target" = "--all" ]; then
+            if ! _claudenv_accounts_empty; then
+              local dir
+              for dir in "$CLAUDENV_ACCOUNTS_DIR"/*/; do
+                paths_to_remove+=("$(_claudenv_vi_path_for "$(basename "$dir")")")
+              done
+            fi
+            # Disable auto-register on add/import.
+            rm -f "$CLAUDENV_VI_FLAG"
+          else
+            _claudenv_validate_name "$target" || return 1
+            paths_to_remove=("$(_claudenv_vi_path_for "$target")")
+          fi
+
+          local removed=0 p
+          for p in "${paths_to_remove[@]}"; do
+            if _claudenv_vi_contains "$p"; then
+              _claudenv_vi_remove_path "$p"
+              echo "  - $p"
+              removed=$((removed + 1))
+            fi
+          done
+
+          echo
+          echo "Removed $removed path(s)."
+          if [ "$removed" -gt 0 ]; then
+            echo "→ Relaunch Vibe Island to apply."
+          fi
+          ;;
+
+        status)
+          echo "Vibe Island prefs:  $CLAUDENV_VI_PLIST"
+          echo "Auto-register flag: $([ -f "$CLAUDENV_VI_FLAG" ] && echo enabled || echo disabled)"
+          echo
+          echo "Registered Claude Code Forks:"
+          local listed
+          listed=$(_claudenv_vi_list_paths)
+          if [ -z "$listed" ]; then
+            echo "  (none)"
+          else
+            echo "$listed" | sed 's/^/  /'
+          fi
+          echo
+          echo "claudenv profiles:"
+          if _claudenv_accounts_empty; then
+            echo "  (none)"
+          else
+            local n vi_path mark
+            for dir in "$CLAUDENV_ACCOUNTS_DIR"/*/; do
+              n=$(basename "$dir")
+              vi_path=$(_claudenv_vi_path_for "$n")
+              if _claudenv_vi_contains "$vi_path"; then
+                mark="✓"
+              else
+                mark="·"
+              fi
+              echo "  $mark $n"
+            done
+            echo
+            echo "  ✓ = registered    · = not registered"
+          fi
+          ;;
+
+        ""|help|-h|--help)
+          cat <<'EOF'
+claudenv vibe-island — register claudenv profiles with Vibe Island (macOS)
+
+Usage:
+  claudenv vibe-island install [<name>|--all]    Register profile(s) as Claude Code Forks
+  claudenv vibe-island uninstall [<name>|--all]  Unregister profile(s)
+  claudenv vibe-island status                    Show registration state
+  claudenv vibe-island help                      Show this help
+
+`install` also enables auto-registration: future `claudenv add`/`import` will
+register new profiles with Vibe Island automatically. `uninstall --all`
+disables it again.
+
+After install/uninstall, relaunch Vibe Island to apply (it injects hooks
+into each registered path's settings.json on launch).
+EOF
+          ;;
+
+        *)
+          echo "Unknown subcommand: vibe-island $sub. Run 'claudenv vibe-island help'" >&2
+          return 1
+          ;;
+      esac
       ;;
 
     help|--help|-h|"")
@@ -284,6 +517,7 @@ Commands:
   claudenv which                Print active CLAUDE_CONFIG_DIR
   claudenv run <name> -- ...    Run claude once with <name>, no shell switch
   claudenv remove <name>        Delete an account and its data
+  claudenv vibe-island ...      Register profiles with Vibe Island (macOS; see `vibe-island help`)
 
 Optional: claudenv_enable_auto_switch    Auto-switch on cd into folders with .claudenvrc
 EOF
@@ -360,7 +594,7 @@ claudenv_enable_auto_switch() {
 #   - SC2296: `${(@f)...}` is the zsh "split on newlines" parameter flag
 # shellcheck disable=SC2034,SC2154,SC2296
 _claudenv_complete_zsh() {
-  local -a subcommands accounts
+  local -a subcommands accounts vi_subs
   subcommands=(
     'add:Create a new account slot'
     'import:Import existing config as a new account'
@@ -371,7 +605,14 @@ _claudenv_complete_zsh() {
     'which:Show CLAUDE_CONFIG_DIR'
     'run:Run claude once with account'
     'remove:Delete account'
+    'vibe-island:Register profiles with Vibe Island (macOS)'
     'help:Show help'
+  )
+  vi_subs=(
+    'install:Register profile(s) as Claude Code Forks'
+    'uninstall:Unregister profile(s)'
+    'status:Show registration state'
+    'help:Show vibe-island help'
   )
 
   if [ -d "$CLAUDENV_ACCOUNTS_DIR" ]; then
@@ -384,6 +625,13 @@ _claudenv_complete_zsh() {
     case "${words[2]}" in
       use|local|run|remove|rm)
         _describe 'account' accounts ;;
+      vibe-island)
+        _describe 'subcommand' vi_subs ;;
+    esac
+  elif (( CURRENT == 4 )); then
+    case "${words[2]} ${words[3]}" in
+      'vibe-island install'|'vibe-island uninstall')
+        _describe 'account' accounts ;;
     esac
   fi
 }
@@ -395,13 +643,22 @@ _claudenv_complete_bash() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   COMPREPLY=()
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "add import use local list ls current which run remove rm help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "add import use local list ls current which run remove rm vibe-island help" -- "$cur") )
   elif [ "$COMP_CWORD" -eq 2 ]; then
     case "${COMP_WORDS[1]}" in
       use|local|run|remove|rm)
         local accounts
         accounts=$(ls -1 "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)
         COMPREPLY=( $(compgen -W "$accounts" -- "$cur") ) ;;
+      vibe-island)
+        COMPREPLY=( $(compgen -W "install uninstall status help" -- "$cur") ) ;;
+    esac
+  elif [ "$COMP_CWORD" -eq 3 ]; then
+    case "${COMP_WORDS[1]} ${COMP_WORDS[2]}" in
+      "vibe-island install"|"vibe-island uninstall")
+        local accounts
+        accounts=$(ls -1 "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)
+        COMPREPLY=( $(compgen -W "$accounts --all" -- "$cur") ) ;;
     esac
   fi
 }

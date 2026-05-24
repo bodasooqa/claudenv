@@ -89,19 +89,33 @@ For unattended installs (CI, scripted), set `CLAUDENV_AUTO_SWITCH=1` (or `0`) be
 CLAUDENV_AUTO_SWITCH=1 curl -fsSL https://raw.githubusercontent.com/bodasooqa/claudenv/main/install.sh | bash
 ```
 
-## GUI-launched IDEs (macOS)
+## GUI-launched IDEs (VS Code / Cursor)
 
-claudenv works by setting `CLAUDE_CONFIG_DIR` in your shell. When you launch an IDE (VS Code, Cursor) from the Dock, Spotlight, or Finder, macOS spawns it under `launchd` — which does not read `~/.zshrc`. The IDE's process environment is therefore missing `CLAUDE_CONFIG_DIR`, and the `claude` binary the extension spawns inherits that empty env. The result: the extension uses the default `~/.claude` config, not the claudenv profile you have active in your terminals.
+claudenv works by setting `CLAUDE_CONFIG_DIR` in your shell. When you launch an IDE (VS Code, Cursor) from the Dock, Spotlight, or Finder, macOS spawns it under `launchd` — which does not read `~/.zshrc`. The IDE's process env is therefore missing `CLAUDE_CONFIG_DIR`, and the `claude` process the Claude Code extension spawns inherits that empty env. The result: the extension uses the default `~/.claude` config, not your active claudenv profile.
 
-**Workaround:** launch the IDE from a terminal:
+The installer drops a small launcher at `~/.claudenv/bin/claude-wrapper` that resolves the right profile on its own (nearest `.claudenvrc` walking up, otherwise the global default in `~/.claudenv/current`) and then exec's the real `claude`. Point the Claude Code extension at it:
+
+1. Open extension settings (VS Code / Cursor)
+2. Find **Claude Process Wrapper** (setting key: `claude-code.processWrapper` — _description: "Executable path used to launch the Claude process"_)
+3. Set it to:
+
+   ```
+   ~/.claudenv/bin/claude-wrapper
+   ```
+
+   (or the absolute path: `/Users/<you>/.claudenv/bin/claude-wrapper`)
+
+4. Reload the IDE window
+
+Now the extension picks up the same profile your terminals do, regardless of how the IDE was launched.
+
+**Fallback for IDEs without a wrapper hook:** launch from a terminal so the env propagates:
 
 ```bash
 cursor .       # or: code .
 ```
 
-The terminal session has already sourced your shell rc, so the env propagates into the IDE and into anything it spawns.
-
-This is the same constraint that affects `nvm`, `pyenv`, and other shell-init tools. A proper fix would be a `claude` wrapper script on launchd's PATH so GUI launches pick up the right `CLAUDE_CONFIG_DIR` automatically — [open an issue](https://github.com/bodasooqa/claudenv/issues) if you'd like that built in.
+**If the wrapper can't find `claude`:** launchd's PATH is minimal, so the wrapper probes common install locations (Homebrew, npm prefix, `~/.local/bin`, `~/.volta/bin`, `~/.bun/bin`). If yours isn't covered, set `CLAUDENV_CLAUDE_BIN` to the full path of `claude` in your env — the wrapper honors it.
 
 ## Commands
 
@@ -117,6 +131,24 @@ This is the same constraint that affects `nvm`, `pyenv`, and other shell-init to
 | `claudenv which` | Print active `CLAUDE_CONFIG_DIR` |
 | `claudenv run <name> -- ...` | Run `claude` once under `<name>` without switching shell |
 | `claudenv remove <name>` | Delete an account and all its data |
+| `claudenv vibe-island ...` | Register profiles with [Vibe Island](https://vibeisland.app) (macOS) — see below |
+
+## Vibe Island integration (macOS)
+
+[Vibe Island](https://vibeisland.app) auto-discovers Claude Code sessions by injecting hooks into `<CLAUDE_CONFIG_DIR>/settings.json`. It needs to know about each profile separately — its **CLI Hooks → Add Claude Code Fork** panel keeps a list of paths to register. claudenv can manage that list for you:
+
+```bash
+claudenv vibe-island install --all          # register every existing profile
+claudenv vibe-island install <name>         # register one profile
+claudenv vibe-island uninstall [<name>|--all]
+claudenv vibe-island status                 # show which profiles are registered
+```
+
+After `install`/`uninstall`, **relaunch Vibe Island** — it injects hooks at launch time. Until you do, newly registered forks will show a **Repair** button in the VI settings panel; just close and reopen the app and they'll go green on their own (no need to click Repair manually).
+
+Running `install` also flips on auto-registration: any future `claudenv add` / `import` will register the new profile with Vibe Island automatically. Turn it off with `claudenv vibe-island uninstall --all`. The installer offers to enable this if it detects Vibe Island.
+
+Mechanism: the list is stored in macOS prefs (`~/Library/Preferences/app.vibeisland.macos.plist` → `customClaudeCodeConfigPaths`) and updated via the built-in `defaults` tool — no extra dependencies.
 
 ## How it works
 

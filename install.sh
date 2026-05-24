@@ -9,7 +9,8 @@ set -e
 CLAUDENV_DIR="${CLAUDENV_DIR:-$HOME/.claudenv}"
 CLAUDENV_VERSION="${CLAUDENV_VERSION:-main}"
 CLAUDENV_REPO="${CLAUDENV_REPO:-bodasooqa/claudenv}"
-CLAUDENV_SOURCE="https://raw.githubusercontent.com/$CLAUDENV_REPO/$CLAUDENV_VERSION/claudenv.sh"
+CLAUDENV_SOURCE="${CLAUDENV_SOURCE:-https://raw.githubusercontent.com/$CLAUDENV_REPO/$CLAUDENV_VERSION/claudenv.sh}"
+CLAUDENV_WRAPPER_SOURCE="${CLAUDENV_WRAPPER_SOURCE:-https://raw.githubusercontent.com/$CLAUDENV_REPO/$CLAUDENV_VERSION/bin/claude-wrapper}"
 
 # --- output helpers ---------------------------------------------------------
 
@@ -58,6 +59,26 @@ fi
 
 mv "$tmp" "$CLAUDENV_DIR/claudenv.sh"
 info "Saved $CLAUDENV_DIR/claudenv.sh"
+
+# --- install claude-wrapper -------------------------------------------------
+# Standalone executable for environments that can't source ~/.zshrc (GUI-launched
+# IDEs, launchd jobs, etc.) but expose a "wrapper binary" hook — e.g. VS Code /
+# Cursor's "Claude Process Wrapper" setting.
+
+mkdir -p "$CLAUDENV_DIR/bin"
+wrapper_tmp="$CLAUDENV_DIR/bin/claude-wrapper.tmp"
+if fetch "$CLAUDENV_WRAPPER_SOURCE" > "$wrapper_tmp" \
+   && [ -s "$wrapper_tmp" ] \
+   && head -n 5 "$wrapper_tmp" | grep -q "claudenv claude-wrapper"; then
+  mv "$wrapper_tmp" "$CLAUDENV_DIR/bin/claude-wrapper"
+  chmod +x "$CLAUDENV_DIR/bin/claude-wrapper"
+  info "Saved $CLAUDENV_DIR/bin/claude-wrapper"
+  WRAPPER_INSTALLED=1
+else
+  warn "Failed to install claude-wrapper (GUI-IDE support); main install OK."
+  rm -f "$wrapper_tmp"
+  WRAPPER_INSTALLED=0
+fi
 
 # --- detect shell rc file ---------------------------------------------------
 
@@ -126,6 +147,34 @@ if [ -n "$RC_FILE" ]; then
   fi
 fi
 
+# --- offer Vibe Island auto-registration ------------------------------------
+# Vibe Island (macOS) keeps a list of "Claude Code Forks" in its prefs and
+# injects hooks into each on launch. If detected, offer to set the flag so
+# future claudenv add/import auto-registers new profiles.
+
+VI_PLIST="$HOME/Library/Preferences/app.vibeisland.macos.plist"
+VI_ENABLED=0
+
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$VI_PLIST" ]; then
+  if [ -f "$CLAUDENV_DIR/vibe-island.enabled" ]; then
+    VI_ENABLED=1
+    info "Vibe Island auto-register already enabled"
+  else
+    vi_ans="${CLAUDENV_VIBE_ISLAND:-}"
+    if [ -z "$vi_ans" ] && (printf "" > /dev/tty) 2>/dev/null; then
+      printf "Detected Vibe Island. Auto-register claudenv profiles with it? [y/N] " > /dev/tty
+      read -r vi_ans < /dev/tty || vi_ans=n
+    fi
+    case "$vi_ans" in
+      y|Y|yes|YES|1|true|TRUE)
+        touch "$CLAUDENV_DIR/vibe-island.enabled"
+        VI_ENABLED=1
+        info "Enabled Vibe Island auto-registration"
+        ;;
+    esac
+  fi
+fi
+
 # --- check for claude CLI ---------------------------------------------------
 
 if ! command -v claude >/dev/null 2>&1; then
@@ -153,6 +202,30 @@ if [ "$AUTO_SWITCH_ENABLED" = "0" ] && [ -n "$RC_FILE" ]; then
   cat <<EOF
 To enable auto-switch later:
   echo 'claudenv_enable_auto_switch' >> $RC_FILE
+
+EOF
+fi
+
+if [ "$WRAPPER_INSTALLED" = "1" ]; then
+  cat <<EOF
+For GUI-launched IDEs (VS Code / Cursor, Claude Code extension):
+  Set the extension's ${BOLD}Claude Process Wrapper${NC} setting to:
+    $CLAUDENV_DIR/bin/claude-wrapper
+
+  Without this, the extension launched from Dock/Spotlight won't pick up
+  your claudenv profile (macOS launchd doesn't read your shell rc).
+
+EOF
+fi
+
+if [ "$VI_ENABLED" = "1" ]; then
+  cat <<EOF
+Vibe Island integration:
+  New profiles created via 'claudenv add' / 'claudenv import' will be
+  registered with Vibe Island automatically.
+  Register existing profiles now:
+    ${BOLD}claudenv vibe-island install --all${NC}
+  (Then relaunch Vibe Island to apply.)
 
 EOF
 fi
