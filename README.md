@@ -97,17 +97,17 @@ The installer drops a small launcher at `~/.claudenv/bin/claude-wrapper` that re
 
 1. Open extension settings (VS Code / Cursor)
 2. Find **Claude Process Wrapper** (setting key: `claude-code.processWrapper` — _description: "Executable path used to launch the Claude process"_)
-3. Set it to:
+3. Set it to the **absolute** path (the extension does not expand `~`, so a path starting with `~` fails with _"native binary not found"_):
 
    ```
-   ~/.claudenv/bin/claude-wrapper
+   /Users/<you>/.claudenv/bin/claude-wrapper
    ```
-
-   (or the absolute path: `/Users/<you>/.claudenv/bin/claude-wrapper`)
 
 4. Reload the IDE window
 
 Now the extension picks up the same profile your terminals do, regardless of how the IDE was launched.
+
+> Installed claudenv before this wrapper existed? The launcher only ships in newer installers, so `~/.claudenv/bin/claude-wrapper` may be missing. Re-run the [install command](#install) — it drops the wrapper in place and leaves your account data untouched.
 
 **Fallback for IDEs without a wrapper hook:** launch from a terminal so the env propagates:
 
@@ -115,7 +115,19 @@ Now the extension picks up the same profile your terminals do, regardless of how
 cursor .       # or: code .
 ```
 
-**If the wrapper can't find `claude`:** launchd's PATH is minimal, so the wrapper probes common install locations (Homebrew, npm prefix, `~/.local/bin`, `~/.volta/bin`, `~/.bun/bin`). If yours isn't covered, set `CLAUDENV_CLAUDE_BIN` to the full path of `claude` in your env — the wrapper honors it.
+**How the wrapper finds `claude`:** as a process-wrapper hook, the IDE hands the wrapper the exact `claude` executable to launch — so it just applies the profile and runs that, no lookup needed (this also means it uses the IDE's own version-matched CLI). When you run the wrapper standalone with no arguments, it falls back to probing common install locations (Homebrew, npm prefix, `~/.local/bin`, `~/.volta/bin`, `~/.bun/bin`); if yours isn't covered, set `CLAUDENV_CLAUDE_BIN` to the full path of `claude` and the wrapper honors it.
+
+**After switching profiles, start a new chat.** Conversation history (and plugins) live _inside_ `CLAUDE_CONFIG_DIR`, so each account has its own. The extension remembers the last conversation per workspace and tries to resume it on reload — but a session created under one profile won't exist under another, so right after a switch you'll see `No conversation found with session ID: …`. It's harmless: just start a new chat and it's created under the now-active profile. Your old conversations aren't lost; they reappear if you switch that config back.
+
+**Wrapper set but the extension still uses `~/.claude`?** The wrapper falls back to the default `~/.claude` config whenever it can't resolve a profile — that is, when `~/.claudenv/current` is empty or names an account that no longer exists (e.g. left over from a `claudenv remove`, or never set). Point the global default at a real account with `claudenv use <name>`, then reload the IDE window. From a terminal at the same path, `claudenv current` shows which profile the wrapper will land on.
+
+**Bringing existing history and plugins into an account.** Each account has its own conversations and plugins, so a fresh or pre-existing account won't have what's under `~/.claude`. For plugins, use [`claudenv plugins sync`](#plugins). For conversation history, `claudenv import <name>` seeds a *new* account from `~/.claude` (history included); to top up an *existing* account without overwriting anything already there, copy the transcripts directly:
+
+```bash
+rsync -a --ignore-existing ~/.claude/projects/ ~/.claudenv/accounts/<name>/projects/
+```
+
+(`--ignore-existing` is additive — it never clobbers sessions the account already has. Add `file-history/`, `session-env/` the same way if you want full resume fidelity.)
 
 ## Commands
 

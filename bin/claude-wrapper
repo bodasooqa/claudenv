@@ -8,12 +8,23 @@
 #   ~/.claudenv/bin/claude-wrapper
 #
 # This script resolves CLAUDE_CONFIG_DIR the same way claudenv.sh does
-# (nearest .claudenvrc walking up from $PWD, else ~/.claudenv/current), then
-# exec's the real claude with the chosen env applied.
+# (nearest .claudenvrc walking up from $PWD, else ~/.claudenv/current), applies
+# it to the environment, then runs claude.
+#
+# IDE "process wrapper" hooks (VS Code / Cursor's claude-code.processWrapper)
+# invoke us as a PREFIX: they pass the real claude executable and its arguments
+# as our argv — e.g. `claude-wrapper <real-claude> <args...>` or
+# `claude-wrapper node <cli.js> <args...>`. In that case we just set the env and
+# exec those arguments verbatim. We must NOT substitute our own claude, or the
+# real path lands in argv as a stray positional and breaks option parsing
+# (symptom: `error: unknown option '--json'` when the IDE lists plugins).
+#
+# When invoked with no arguments (standalone use), we resolve the real claude
+# ourselves and exec it.
 #
 # Env overrides:
 #   CLAUDENV_DIR         (default: ~/.claudenv)
-#   CLAUDENV_CLAUDE_BIN  (force a specific claude executable path)
+#   CLAUDENV_CLAUDE_BIN  (force a specific claude executable path; standalone only)
 
 CLAUDENV_DIR="${CLAUDENV_DIR:-$HOME/.claudenv}"
 CLAUDENV_ACCOUNTS_DIR="$CLAUDENV_DIR/accounts"
@@ -106,6 +117,18 @@ _resolve_profile() {
 
 # --- main -------------------------------------------------------------------
 
+# Apply the active profile to the environment.
+if profile=$(_resolve_profile); then
+  export CLAUDE_CONFIG_DIR="$CLAUDENV_ACCOUNTS_DIR/$profile"
+fi
+
+# Process-wrapper mode: the IDE handed us the real claude command + args. Run it
+# as-is — it already points at the IDE's own (version-matched) claude.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
+# Standalone mode (no args): resolve the real claude ourselves and exec it.
 claude_bin=$(_find_claude) || {
   echo "claudenv-wrapper: 'claude' executable not found." >&2
   echo "  Tried: \$CLAUDENV_CLAUDE_BIN, PATH, /opt/homebrew, /usr/local, ~/.local, ~/.npm-global, ~/.volta, ~/.bun, npm prefix." >&2
@@ -113,8 +136,4 @@ claude_bin=$(_find_claude) || {
   exit 127
 }
 
-if profile=$(_resolve_profile); then
-  export CLAUDE_CONFIG_DIR="$CLAUDENV_ACCOUNTS_DIR/$profile"
-fi
-
-exec "$claude_bin" "$@"
+exec "$claude_bin"
