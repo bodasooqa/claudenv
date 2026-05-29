@@ -78,6 +78,94 @@ _claudenv_accounts_empty() {
   [ -z "$(ls -A "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)" ]
 }
 
+# Name of the account active in this shell (env first, then global default).
+# Echoes nothing if neither is set.
+_claudenv_active_name() {
+  if [ -n "$CLAUDE_CONFIG_DIR" ]; then
+    basename "$CLAUDE_CONFIG_DIR"
+  elif [ -f "$CLAUDENV_CURRENT_FILE" ]; then
+    cat "$CLAUDENV_CURRENT_FILE"
+  fi
+}
+
+# --- plugin sync helpers ----------------------------------------------------
+
+# Merge enabledPlugins + extraKnownMarketplaces from a source settings.json
+# into an account's settings.json. Source wins on key conflicts; everything
+# else in the account file is preserved. No-op (with a note) if jq is missing.
+_claudenv_plugins_merge_settings() {
+  local src="$1" dst="$2"
+  [ -f "$src" ] || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "    ! jq not found — plugins copied but not enabled in settings.json" >&2
+    echo "      Install jq and re-run, or enable them with /plugin inside the account." >&2
+    return 0
+  fi
+  [ -f "$dst" ] || echo '{}' > "$dst"
+  local tmp
+  tmp=$(mktemp) || return 1
+  if jq -s '
+      .[0] as $src | .[1] as $dst |
+      $dst
+      | .enabledPlugins = (($dst.enabledPlugins // {}) + ($src.enabledPlugins // {}))
+      | .extraKnownMarketplaces =
+          (($dst.extraKnownMarketplaces // {}) + ($src.extraKnownMarketplaces // {}))
+    ' "$src" "$dst" > "$tmp"; then
+    mv "$tmp" "$dst"
+  else
+    rm -f "$tmp"
+    echo "    ! failed to merge settings.json (left unchanged)" >&2
+    return 1
+  fi
+}
+
+# Sync plugins from a source config dir into one account.
+#   $1 = account name   $2 = source config dir (no trailing slash)   $3 = copy|link
+# Copies/links plugins/{cache,marketplaces}, rewrites absolute installPath
+# entries to point inside the account, then merges enabled state into settings.
+_claudenv_plugins_sync_one() {
+  local name="$1" src="$2" mode="$3"
+  local dst="$CLAUDENV_ACCOUNTS_DIR/$name"
+  local src_plugins="$src/plugins" dst_plugins="$dst/plugins"
+
+  if [ ! -d "$src_plugins" ]; then
+    echo "  ✗ $name: source has no plugins dir ($src_plugins)" >&2
+    return 1
+  fi
+  if [ "$src" = "$dst" ]; then
+    echo "  = $name: source and account are the same dir, skipped"
+    return 0
+  fi
+
+  mkdir -p "$dst_plugins"
+
+  # Replace the heavy dirs wholesale so removed plugins don't linger.
+  local sub
+  for sub in cache marketplaces; do
+    rm -rf "${dst_plugins:?}/$sub"
+    [ -e "$src_plugins/$sub" ] || continue
+    if [ "$mode" = link ]; then
+      ln -s "$src_plugins/$sub" "$dst_plugins/$sub"
+    else
+      cp -R "$src_plugins/$sub" "$dst_plugins/$sub"
+    fi
+  done
+
+  # Copy the manifests, rewriting the absolute source prefix → account dir so
+  # installPath / installLocation resolve under the account (the rewritten
+  # path still resolves through the symlink in --link mode). Path components
+  # are literal here; the unescaped '.' in '.claude' can't realistically
+  # collide with another existing path, so a plain prefix substitution is fine.
+  local f
+  for f in installed_plugins.json known_marketplaces.json; do
+    [ -f "$src_plugins/$f" ] || continue
+    sed "s#${src%/}#${dst%/}#g" "$src_plugins/$f" > "$dst_plugins/$f"
+  done
+
+  _claudenv_plugins_merge_settings "$src/settings.json" "$dst/settings.json"
+  echo "  ✓ $name  ($mode from $src)"
+}
+
 # --- Vibe Island helpers (macOS only) ---------------------------------------
 
 _claudenv_vi_available() {
@@ -321,6 +409,128 @@ claudenv() {
       CLAUDE_CONFIG_DIR="$CLAUDENV_ACCOUNTS_DIR/$name" claude "$@"
       ;;
 
+    plugins)
+      local sub="$1"
+      [ $# -gt 0 ] && shift
+
+      case "$sub" in
+        sync)
+          local mode=copy src="$HOME/.claude" all=0
+          local -a targets=()
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --from)   src="$2"; shift 2 ;;
+              --from=*) src="${1#--from=}"; shift ;;
+              --link)   mode=link; shift ;;
+              --copy)   mode=copy; shift ;;
+              --all)    all=1; shift ;;
+              -*)       echo "Unknown option: $1" >&2; return 1 ;;
+              *)        targets+=("$1"); shift ;;
+            esac
+          done
+
+          src="${src%/}"
+          if [ ! -d "$src/plugins" ]; then
+            echo "Source '$src' has no plugins/ dir. Pass --from <config-dir>." >&2
+            return 1
+          fi
+
+          # Resolve targets: --all, explicit names, or the active account.
+          if [ "$all" = 1 ]; then
+            if _claudenv_accounts_empty; then
+              echo "No accounts to sync. Add one with: claudenv add <name>" >&2
+              return 1
+            fi
+            targets=()
+            local dir
+            for dir in "$CLAUDENV_ACCOUNTS_DIR"/*/; do
+              targets+=("$(basename "$dir")")
+            done
+          elif [ "${#targets[@]}" -eq 0 ]; then
+            local active
+            active=$(_claudenv_active_name)
+            if [ -z "$active" ]; then
+              echo "No active account. Pass a name: claudenv plugins sync <name>" >&2
+              return 1
+            fi
+            targets=("$active")
+          fi
+
+          echo "Syncing plugins ($mode) from $src:"
+          local n rc=0
+          for n in "${targets[@]}"; do
+            _claudenv_validate_name "$n" || { rc=1; continue; }
+            if [ ! -d "$CLAUDENV_ACCOUNTS_DIR/$n" ]; then
+              echo "  ✗ $n: account not found (claudenv add $n)" >&2
+              rc=1; continue
+            fi
+            _claudenv_plugins_sync_one "$n" "$src" "$mode" || rc=1
+          done
+          echo
+          echo "Restart Claude Code / reload the VS Code window to pick up changes."
+          return $rc
+          ;;
+
+        status)
+          local name="${1:-$(_claudenv_active_name)}"
+          if [ -z "$name" ]; then
+            echo "Usage: claudenv plugins status [<name>]" >&2
+            return 1
+          fi
+          _claudenv_validate_name "$name" || return 1
+          local dir="$CLAUDENV_ACCOUNTS_DIR/$name"
+          if [ ! -d "$dir" ]; then
+            echo "Account '$name' not found" >&2
+            return 1
+          fi
+          echo "Account: $name"
+          echo "  config dir: $dir"
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "  (install jq for a parsed view; showing raw files)"
+            echo "  --- installed_plugins.json ---"
+            cat "$dir/plugins/installed_plugins.json" 2>/dev/null || echo "  (none)"
+            return 0
+          fi
+          echo "  installed:"
+          jq -r '(.plugins // {}) | keys[]? | "    " + .' \
+            "$dir/plugins/installed_plugins.json" 2>/dev/null || echo "    (none)"
+          echo "  enabled:"
+          jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value)
+                 | "    " + .key' "$dir/settings.json" 2>/dev/null || echo "    (none)"
+          echo "  marketplaces:"
+          jq -r '(. // {}) | keys[]? | "    " + .' \
+            "$dir/plugins/known_marketplaces.json" 2>/dev/null || echo "    (none)"
+          ;;
+
+        ""|help|-h|--help)
+          cat <<'EOF'
+claudenv plugins — sync Claude Code plugins into isolated accounts
+
+Usage:
+  claudenv plugins sync [<name>|--all] [--from <dir>] [--link|--copy]
+                                Copy plugins + enabled state into account(s)
+  claudenv plugins status [<name>]   Show installed/enabled plugins for account
+
+Options for sync:
+  --from <dir>   Source config dir to sync from (default: ~/.claude)
+  --copy         Copy plugin files into the account (default; full isolation)
+  --link         Symlink cache/marketplaces (shared, saves disk, auto-updates)
+  --all          Sync every account
+  <name>         Sync a specific account (default: the active one)
+
+Plugins live in a separate config dir per account, so plugins installed under
+~/.claude don't appear under claudenv. `sync` brings them across and enables
+them. Restart Claude Code (or reload the VS Code window) afterward.
+EOF
+          ;;
+
+        *)
+          echo "Unknown subcommand: plugins $sub. Run 'claudenv plugins help'" >&2
+          return 1
+          ;;
+      esac
+      ;;
+
     remove|rm)
       local name="$1"
       if [ -z "$name" ]; then
@@ -517,6 +727,7 @@ Commands:
   claudenv which                Print active CLAUDE_CONFIG_DIR
   claudenv run <name> -- ...    Run claude once with <name>, no shell switch
   claudenv remove <name>        Delete an account and its data
+  claudenv plugins ...          Sync plugins into accounts (see `plugins help`)
   claudenv vibe-island ...      Register profiles with Vibe Island (macOS; see `vibe-island help`)
 
 Optional: claudenv_enable_auto_switch    Auto-switch on cd into folders with .claudenvrc
@@ -605,6 +816,7 @@ _claudenv_complete_zsh() {
     'which:Show CLAUDE_CONFIG_DIR'
     'run:Run claude once with account'
     'remove:Delete account'
+    'plugins:Sync plugins into accounts'
     'vibe-island:Register profiles with Vibe Island (macOS)'
     'help:Show help'
   )
@@ -613,6 +825,12 @@ _claudenv_complete_zsh() {
     'uninstall:Unregister profile(s)'
     'status:Show registration state'
     'help:Show vibe-island help'
+  )
+  local -a plugin_subs
+  plugin_subs=(
+    'sync:Copy plugins + enabled state into account(s)'
+    'status:Show installed/enabled plugins for an account'
+    'help:Show plugins help'
   )
 
   if [ -d "$CLAUDENV_ACCOUNTS_DIR" ]; then
@@ -627,10 +845,14 @@ _claudenv_complete_zsh() {
         _describe 'account' accounts ;;
       vibe-island)
         _describe 'subcommand' vi_subs ;;
+      plugins)
+        _describe 'subcommand' plugin_subs ;;
     esac
   elif (( CURRENT == 4 )); then
     case "${words[2]} ${words[3]}" in
-      'vibe-island install'|'vibe-island uninstall')
+      'vibe-island install'|'vibe-island uninstall'|'plugins status')
+        _describe 'account' accounts ;;
+      'plugins sync')
         _describe 'account' accounts ;;
     esac
   fi
@@ -643,7 +865,7 @@ _claudenv_complete_bash() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   COMPREPLY=()
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "add import use local list ls current which run remove rm vibe-island help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "add import use local list ls current which run remove rm plugins vibe-island help" -- "$cur") )
   elif [ "$COMP_CWORD" -eq 2 ]; then
     case "${COMP_WORDS[1]}" in
       use|local|run|remove|rm)
@@ -652,10 +874,12 @@ _claudenv_complete_bash() {
         COMPREPLY=( $(compgen -W "$accounts" -- "$cur") ) ;;
       vibe-island)
         COMPREPLY=( $(compgen -W "install uninstall status help" -- "$cur") ) ;;
+      plugins)
+        COMPREPLY=( $(compgen -W "sync status help" -- "$cur") ) ;;
     esac
   elif [ "$COMP_CWORD" -eq 3 ]; then
     case "${COMP_WORDS[1]} ${COMP_WORDS[2]}" in
-      "vibe-island install"|"vibe-island uninstall")
+      "vibe-island install"|"vibe-island uninstall"|"plugins sync"|"plugins status")
         local accounts
         accounts=$(ls -1 "$CLAUDENV_ACCOUNTS_DIR" 2>/dev/null)
         COMPREPLY=( $(compgen -W "$accounts --all" -- "$cur") ) ;;

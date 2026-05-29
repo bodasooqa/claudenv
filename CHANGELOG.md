@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `claudenv plugins sync [<name>|--all] [--from <dir>] [--link|--copy]` to bring plugins from a source config dir (default `~/.claude`) into isolated accounts. Plugins live per-`CLAUDE_CONFIG_DIR`, so plugins installed under `~/.claude` were invisible under claudenv accounts (the VS Code "Manage Plugins" panel showed none). `sync` copies `plugins/{cache,marketplaces}`, rewrites absolute `installPath`/`installLocation` entries to resolve inside the account, and merges `enabledPlugins` + `extraKnownMarketplaces` into the account's `settings.json` via `jq` (source wins; other settings preserved). `--link` symlinks the heavy dirs instead of copying. `claudenv plugins status [<name>]` lists installed/enabled plugins and known marketplaces for an account. Shell completion covers the new subcommands.
+
 ## [0.2.0] - 2026-05-24
 
 ### Added

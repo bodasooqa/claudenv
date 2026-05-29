@@ -131,7 +131,25 @@ cursor .       # or: code .
 | `claudenv which` | Print active `CLAUDE_CONFIG_DIR` |
 | `claudenv run <name> -- ...` | Run `claude` once under `<name>` without switching shell |
 | `claudenv remove <name>` | Delete an account and all its data |
+| `claudenv plugins ...` | Sync plugins into accounts — see below |
 | `claudenv vibe-island ...` | Register profiles with [Vibe Island](https://vibeisland.app) (macOS) — see below |
+
+## Plugins
+
+Plugins live in a **separate config dir per account** (`<CLAUDE_CONFIG_DIR>/plugins` plus an `enabledPlugins` block in `settings.json`). Because claudenv gives each account its own `CLAUDE_CONFIG_DIR`, plugins you installed under `~/.claude` don't show up under a claudenv account — the CLI and the VS Code "Manage Plugins" panel both read the active account's dir, which starts empty. `claudenv plugins sync` brings them across:
+
+```bash
+claudenv plugins sync                       # sync ~/.claude → active account
+claudenv plugins sync <name>                # sync into a specific account
+claudenv plugins sync --all                 # sync into every account
+claudenv plugins sync <name> --from ~/.claude   # explicit source dir
+claudenv plugins sync <name> --link         # symlink cache/marketplaces (shared, saves disk)
+claudenv plugins status [<name>]            # show installed / enabled plugins
+```
+
+`sync` copies `plugins/{cache,marketplaces}`, rewrites the absolute `installPath` entries so they resolve inside the account, and merges `enabledPlugins` + `extraKnownMarketplaces` into the account's `settings.json` (source wins on conflicts; your other settings are untouched). Default mode is `--copy` (full isolation); `--link` symlinks the heavy dirs so all accounts share one copy and stay up to date. After syncing, **restart Claude Code or reload the VS Code window** to pick up the plugins.
+
+Merging enabled state needs [`jq`](https://jqlang.github.io/jq/); without it the plugin files are still copied but you'll need to enable them via `/plugin`.
 
 ## Vibe Island integration (macOS)
 
