@@ -90,11 +90,20 @@ _claudenv_active_name() {
 
 # --- plugin sync helpers ----------------------------------------------------
 
-# Merge enabledPlugins + extraKnownMarketplaces from a source settings.json
-# into an account's settings.json. Source wins on key conflicts; everything
-# else in the account file is preserved. No-op (with a note) if jq is missing.
+# Merge plugin state into an account's settings.json:
+#   $1 = source settings.json   $2 = account settings.json
+#   $3 = account known_marketplaces.json (already copied from source)
+# Brings over enabledPlugins from the source, and derives extraKnownMarketplaces
+# from the copied known_marketplaces.json. The latter matters: Claude Code
+# reconciles known_marketplaces from settings.extraKnownMarketplaces at launch,
+# so if the account had a marketplace registered with a different source kind
+# (e.g. a generic `git` clone vs the `github` repo the working config uses), it
+# would revert on next start and the VS Code discover panel would show no
+# plugins to install. Mirroring the source kind into settings keeps them
+# consistent. Source/derived values win on conflict; other settings preserved.
+# No-op (with a note) if jq is missing.
 _claudenv_plugins_merge_settings() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" km="$3"
   [ -f "$src" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
     echo "    ! jq not found — plugins copied but not enabled in settings.json" >&2
@@ -102,14 +111,19 @@ _claudenv_plugins_merge_settings() {
     return 0
   fi
   [ -f "$dst" ] || echo '{}' > "$dst"
+  local extra="{}"
+  if [ -f "$km" ]; then
+    extra=$(jq '(. // {}) | with_entries(.value = {source: .value.source})' "$km" 2>/dev/null) \
+      || extra="{}"
+  fi
   local tmp
   tmp=$(mktemp) || return 1
-  if jq -s '
+  if jq -s --argjson extra "$extra" '
       .[0] as $src | .[1] as $dst |
       $dst
       | .enabledPlugins = (($dst.enabledPlugins // {}) + ($src.enabledPlugins // {}))
       | .extraKnownMarketplaces =
-          (($dst.extraKnownMarketplaces // {}) + ($src.extraKnownMarketplaces // {}))
+          (($dst.extraKnownMarketplaces // {}) + ($src.extraKnownMarketplaces // {}) + $extra)
     ' "$src" "$dst" > "$tmp"; then
     mv "$tmp" "$dst"
   else
@@ -162,7 +176,8 @@ _claudenv_plugins_sync_one() {
     sed "s#${src%/}#${dst%/}#g" "$src_plugins/$f" > "$dst_plugins/$f"
   done
 
-  _claudenv_plugins_merge_settings "$src/settings.json" "$dst/settings.json"
+  _claudenv_plugins_merge_settings \
+    "$src/settings.json" "$dst/settings.json" "$dst_plugins/known_marketplaces.json"
   echo "  ✓ $name  ($mode from $src)"
 }
 
@@ -415,14 +430,14 @@ claudenv() {
 
       case "$sub" in
         sync)
-          local mode=copy src="$HOME/.claude" all=0
+          local mode="copy" src="$HOME/.claude" all=0
           local -a targets=()
           while [ $# -gt 0 ]; do
             case "$1" in
               --from)   src="$2"; shift 2 ;;
               --from=*) src="${1#--from=}"; shift ;;
-              --link)   mode=link; shift ;;
-              --copy)   mode=copy; shift ;;
+              --link)   mode="link"; shift ;;
+              --copy)   mode="copy"; shift ;;
               --all)    all=1; shift ;;
               -*)       echo "Unknown option: $1" >&2; return 1 ;;
               *)        targets+=("$1"); shift ;;
